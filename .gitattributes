@@ -1,2 +1,7 @@
 data/20220516_gene_expr_organoids_drug_adaptation.rds filter=lfs diff=lfs merge=lfs -text
 data/TPM_batch_corrected.tsv filter=lfs diff=lfs merge=lfs -text
+data/map_batch_1_2_3.txt filter=lfs diff=lfs merge=lfs -text
+data/20240308_merged_data_of_viability_and_organoids_size.rds filter=lfs diff=lfs merge=lfs -text
+data/ABC_all.list filter=lfs diff=lfs merge=lfs -text
+data/count_matrix.tsv filter=lfs diff=lfs merge=lfs -text
+data/deg_table_voomWQW.tsv filter=lfs diff=lfs merge=lfs -text
