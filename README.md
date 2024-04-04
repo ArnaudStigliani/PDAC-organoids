@@ -1,5 +1,5 @@
 ### Informations
-The necessary data to run the scripts are in the folder `data\`. all the results will be output in the directory `fig*/results`  
+The necessary data to run the scripts are in the folder `data/`. all the results will be output in the directory `fig*/results`  
 The scripts from the section "QC/mapping scripts" cannot be run without the data available in the SRA accession. Some intermediary files  
 to run the other scripts are therefore provided to the form of expression matrices  
 
