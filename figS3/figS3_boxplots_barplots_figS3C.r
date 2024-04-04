@@ -23,12 +23,12 @@ library(lme4)
 
 
 
-out_dir <- file.path("../../results_2/gene_expression_limma_time_series_BBvsW1/figure_DV/lm_2param_figS3_25_combined", Sys.Date())
+out_dir <- file.path("../results")
 dir.create(out_dir,showWarnings=FALSE, recursive=TRUE)
 
 
-##### read Yifan data
-df_new_combined.rds = readRDS("../../data/20240308_merged_data_of_viability_and_organoids_size.rds")
+##### read df data
+df_new_combined.rds = readRDS("../data/20240308_merged_data_of_viability_and_organoids_size.rds")
 tab.combined <- df_new_combined.rds %>%
     dplyr::select(pictures_included, drug, acidosis.condition, geno, batch, pair, log_mean_total_sphere_surface_area, logv) %>%
     mutate(drug = drug %>% str_replace("E\\+G","E_G")) %>% 
@@ -46,7 +46,7 @@ tab.combined <- df_new_combined.rds %>%
 
 
 
-Yifan.viability <- tab.combined %>%
+df.viability <- tab.combined %>%
     dplyr::select(-logs, -pairs, -pictures_included) %>%
     dplyr::rename(pair = pairv) %>%
     drop_na() %>%
@@ -63,14 +63,14 @@ ano.df.list <- list()
 coeffs <- list()
 df.temp.list <- list()
 ##
-for (geno.sel in Yifan.viability$geno %>% levels)
+for (geno.sel in df.viability$geno %>% levels)
 {
     lm.temp <- lm(logv ~ pair,
-                  data = Yifan.viability %>% dplyr::filter(geno==geno.sel))
+                  data = df.viability %>% dplyr::filter(geno==geno.sel))
     a <- residuals(lm.temp) +  ( median(lm.temp$coefficients[-1] + lm.temp$coefficients[1]))
-    df.temp.list[[geno.sel]]  <- Yifan.viability %>% dplyr::filter(geno==geno.sel) %>% mutate(logv.bc=a)
+    df.temp.list[[geno.sel]]  <- df.viability %>% dplyr::filter(geno==geno.sel) %>% mutate(logv.bc=a)
     lm.logv <- lm(logv ~       acidosis.condition*drug.condi.quant + pair,
-                  data=Yifan.viability %>% dplyr::filter(geno==geno.sel))
+                  data=df.viability %>% dplyr::filter(geno==geno.sel))
         coeffs[[geno.sel]] <- lm.logv %>% summary() %>% .$coeff %>% 
         as.data.frame() %>%
         setNames(c("Estimate","ste","tval","p")) %>% 
@@ -89,8 +89,8 @@ for (geno.sel in Yifan.viability$geno %>% levels)
     cont.c.bb <- list()
     cont.aa.c <- list()
     contrasts.df.list[[geno.sel]] <- list()
-    pair.sel  <-  Yifan.viability %>% dplyr::filter(geno == geno.sel) %>% .$pair %>% .[1] %>% as.character
-    for (elt in Yifan.viability$drug.condi.quant %>% levels %>% .[-1])
+    pair.sel  <-  df.viability %>% dplyr::filter(geno == geno.sel) %>% .$pair %>% .[1] %>% as.character
+    for (elt in df.viability$drug.condi.quant %>% levels %>% .[-1])
     {
         h.init <- lm.logv$coefficients %>% names
         h.c <- grepl(paste0("^drug\\..*","quant",elt), h.init) %>% as.numeric %>% matrix(nrow=1)
@@ -117,7 +117,7 @@ for (geno.sel in Yifan.viability$geno %>% levels)
     ##
 #### get values to plot
     contrasts.drug[[geno.sel]] <- list()
-    for (elt in Yifan.viability$acidosis.condition %>% levels)
+    for (elt in df.viability$acidosis.condition %>% levels)
     {
         Unt <-   list(acidosis.condition = elt , pair = pair.sel, drug.condi.quant = "Untreated")
         E25 <-   list(acidosis.condition = elt , pair = pair.sel, drug.condi.quant = "E.25")
@@ -145,16 +145,16 @@ for (geno.sel in Yifan.viability$geno %>% levels)
     ##
     ##
     ano.df.list[[geno.sel]] <- list()
-    for (elt in Yifan.viability$acidosis.condition %>% levels)
+    for (elt in df.viability$acidosis.condition %>% levels)
     {
         dosage ="25"
-        Yifan.viability.null <- Yifan.viability %>%
+        df.viability.null <- df.viability %>%
             mutate(drug.condi.quant = drug.condi.quant %>%
                        as.character %>% 
                        ifelse(acidosis.condition == elt & (grepl(dosage, drug.condi.quant) | drug.condi.quant == "Untreated" ), "null", .) %>%
                        factor(c("Untreated", "E.25", "G.25","E_G.25", "null")))
         lm.logv.null <- lm(logv ~  acidosis.condition*drug.condi.quant + pair,
-                           data=Yifan.viability.null %>% dplyr::filter(geno==geno.sel))
+                           data=df.viability.null %>% dplyr::filter(geno==geno.sel))
         elt.dosage  <-  paste0(elt,".", dosage)
         ano.df.list[[geno.sel]][[elt.dosage]] <- anova(lm.logv, lm.logv.null)
     }
@@ -250,12 +250,12 @@ ggpubr::ggexport(g, filename = file.path(out_dir, "dotplot_logv_fig3.pdf"), widt
 stat.test.25.logv <- ano.df %>%
     dplyr::rename(acidosis.condition = ph) %>%
     mutate(group1 = "Untreated", group2 = "E_G.25") %>%
-    mutate(y.position = max(Yifan.viability[, "logv"])* 1.05) %>%
+    mutate(y.position = max(df.viability[, "logv"])* 1.05) %>%
     mutate(p.numeric = as.numeric(p))  %>%
     mutate(p = ifelse(p.numeric < 0.05, paste0(p,"*"), p))
 
 ## boxplot
-g <- ggboxplot(Yifan.viability %>% ## boxplot
+g <- ggboxplot(df.viability %>% ## boxplot
                mutate(drug.condi.quant = drug.condi.quant %>% factor(c("Untreated", "E.25","G.25", "E_G.25"))),
                x = "acidosis.condition", y = "logv", color = "drug.condi.quant", add.params = list(size = 1, shape = 1),
                add = "jitter",

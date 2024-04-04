@@ -21,9 +21,9 @@ library(nlme)
 library(lme4)
 library(sva)
 #### test new table
-out_dir <- file.path("../../results_2/gene_expression_limma_time_series_BBvsW1/figure_DV/lm_2param_fig1_combined", Sys.Date())
+out_dir <- file.path("./results")
 dir.create(out_dir,showWarnings=FALSE, recursive=TRUE)
-df_new_combined.rds = readRDS("../../data/20240308_merged_data_of_viability_and_organoids_size.rds")
+df_new_combined.rds = readRDS("../data/20240308_merged_data_of_viability_and_organoids_size.rds")
 tab.combined <- df_new_combined.rds %>%
     dplyr::select(pictures_included, drug, acidosis.condition, geno, batch, pair, log_mean_total_sphere_surface_area, logv) %>%
     mutate(drug = drug %>% str_replace("E\\+G","E_G")) %>% 

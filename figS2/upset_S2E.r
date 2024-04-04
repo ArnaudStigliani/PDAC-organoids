@@ -1,7 +1,7 @@
 
 ## rm(list=ls())
 args = c("5","8","11","B")
-out_dir <- file.path("../../results_2/gene_expression_limma_time_series_BBvsW1/figure2/all_upset_supfig")
+out_dir <- file.path("results/")
 dir.create(out_dir,showWarnings=FALSE,recursive=TRUE)
 
 #### load libraries ##########
@@ -26,7 +26,7 @@ library(ggtext)
 ##########################
 
 
-DEG.tab.name <- "../../results_2/gene_expression_limma_time_series_BBvsW1/deg_table_voomWQW.tsv"
+DEG.tab.name <- "../data/deg_table_voomWQW.tsv"
 
 DEG.tab <-  read.table(DEG.tab.name, header=TRUE,sep="\t")
 

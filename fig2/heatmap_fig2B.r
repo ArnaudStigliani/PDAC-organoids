@@ -1,6 +1,6 @@
 ## rm(list=ls())
-out_dir <- paste("/isdata/sandelin/people/arnaud/pH_organoids/results_2/gene_expression_limma_time_series_BBvsW1/figure2/heatmap_4")
-Robj_dir <- paste("/isdata/sandelin/people/arnaud/pH_organoids/results_2/gene_expression_limma_time_series_BBvsW1/figure2/Robj")
+out_dir <- paste("../results")
+Robj_dir <- paste("../results/Robj")
 
 dir.create(out_dir,showWarnings=FALSE,recursive=TRUE)
 dir.create(Robj_dir,showWarnings=FALSE,recursive=TRUE)
@@ -10,7 +10,6 @@ dir.create(Robj_dir,showWarnings=FALSE,recursive=TRUE)
 
 library(stringr)
 library(ggplot2)
-library(ggplus)
 library(Cairo)
 library(reshape2)
 library(tidyverse)
@@ -21,7 +20,7 @@ library(cowplot)
 ## read tables ##
 
 
-table_voomWQW.name <- file.path("/isdata/sandelin/people/arnaud/pH_organoids/results_2","gene_expression_limma_time_series_BBvsW1","deg_table_voomWQW.tsv")
+table_voomWQW.name <- file.path("../data","deg_table_voomWQW.tsv")
 table_voomWQW <- read.table(table_voomWQW.name,header=TRUE,sep="\t")
 
 ##############################
@@ -32,13 +31,13 @@ table_voomWQW.heatmap <- table_voomWQW %>% dplyr::select(gene.id,logFC,contrast)
     mutate(geno=str_replace(.$geno,"mP4:p","mP4_p")) %>%
     mutate(geno.contrast=paste(geno,contrast,sep=".")) %>%
     dplyr::select(-contrast,-geno) %>%
-    dcast(gene.id ~ geno.contrast,value.var="logFC") ### wide format to cluster the rows later
+    dcast(gene.id ~ geno.contrast,value.var="logFC")
 
 rownames(table_voomWQW.heatmap) <- table_voomWQW.heatmap$gene.id
 table_voomWQW.heatmap <- table_voomWQW.heatmap %>% dplyr::select(-gene.id)
 
 
-######### color ########
+######### annotation ########
 ### ggplot heatmap
 my_palette <- colorRampPalette(RColorBrewer::brewer.pal(n=5,name="RdBu"))(100) %>% rev
 col_breaks <- c(seq(-3,-0.5,length=25),
@@ -48,9 +47,9 @@ col_breaks <- c(seq(-3,-0.5,length=25),
 
 
 
-matrix.pre.plot <- table_voomWQW.heatmap %>% filter(((abs(.) > 0.5)  %>% rowSums) > 1) ## filter genes that don't have |logFC| > 0.5 in at least 2 conditions
+matrix.pre.plot <- table_voomWQW.heatmap %>% filter(((abs(.) > 0.5)  %>% rowSums) > 1)
 hclust.heatmap <- hclust(dist(matrix.pre.plot))  
-levels.y <- hclust.heatmap$labels[hclust.heatmap$order %>% rev] ## get order of hclust to order the rows of the heatmap
+levels.y <- hclust.heatmap$labels[hclust.heatmap$order %>% rev]
 
 
 
@@ -62,11 +61,13 @@ heatmap.pre.plot <- table_voomWQW.heatmap %>% filter(((abs(.) > 0.5)  %>% rowSum
     mutate(time=ifelse(time=="B","R",time)) %>%
     mutate(time=factor(time,levels=c("5","8","11","R"))) %>%
     mutate(geno=str_replace(.$geno,"_","\n")) %>%
-    mutate(gene.id=factor(gene.id,levels=levels.y)) %>%  ## use th orders of hclust to order the rows  (by assigning factor levels))
+    mutate(gene.id=factor(gene.id,levels=levels.y)) %>% 
     mutate(logFC=ifelse(abs(logFC)<3,logFC,3*sign(logFC))) 
 
 
-g.svg <- ggplot(data = heatmap.pre.plot, 
+g.svg <- ggplot(data = heatmap.pre.plot  %>%
+                    ## dplyr::filter(gene.id %in% .$gene.id[1:1000] ) %>% 
+                    dplyr::filter(geno!="GO") 
   , aes(y = gene.id , x = time , color = logFC,fill=logFC)) +  
     geom_tile() +
     scale_fill_gradientn(colours=my_palette,values=scales::rescale(col_breaks)) +

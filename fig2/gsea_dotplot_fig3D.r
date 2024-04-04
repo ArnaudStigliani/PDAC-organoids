@@ -1,6 +1,6 @@
 rm(list=ls())
-out_dir <- file.path("../../results_2/gene_expression_limma_time_series_BBvsW1/figure2/gsea_v_review_3")
-Robj_dir <- paste("../results_2/gene_expression_limma_time_series_BBvsW1/figure2/Robj")
+out_dir <- file.path("./results")
+Robj_dir <- paste("./results/Robj")
 
 dir.create(out_dir,showWarnings=FALSE,recursive=TRUE)
 dir.create(Robj_dir,showWarnings=FALSE,recursive=TRUE)
@@ -27,7 +27,7 @@ library(svglite)
 #########################
 
 
-DEG.tab.name <- "../../results_2/gene_expression_limma_time_series_BBvsW1/deg_table_voomWQW.tsv"
+DEG.tab.name <- "../data/deg_table_voomWQW.tsv"
 DEG.tab <-  read.table(DEG.tab.name, header=TRUE,sep="\t")
 
 DEG.tab.week.args  <-  DEG.tab %>%
@@ -121,21 +121,21 @@ gsekegg.list.df <- gsekegg.list  %>%  mapply(mutate,.,group=names(.),SIMPLIFY=FA
 
 
 
-###### MSIG and Yifan drug resistance genes analysis
-Yifan.newlist.name <- file.path("../../data/","drug_resistance_genes_carnonical.mouse.rds")
-Yifan.newlist <- rbind.data.frame(readRDS(Yifan.newlist.name) %>%
-                                  dplyr::mutate(gs_description=paste("Yifan",Drug,Directionality,sep=".")),
-                                  readRDS(Yifan.newlist.name) %>%
-                                  dplyr::mutate(gs_description="Yifan.all"),
-                                  readRDS(Yifan.newlist.name) %>%
-                                  dplyr::mutate(gs_description=paste("Yifan",Directionality,sep="."))) %>% 
+###### MSIG and df drug resistance genes analysis
+df.newlist.name <- file.path("../../data/","drug_resistance_genes_carnonical.mouse.rds")
+df.newlist <- rbind.data.frame(readRDS(df.newlist.name) %>%
+                                  dplyr::mutate(gs_description=paste("df",Drug,Directionality,sep=".")),
+                                  readRDS(df.newlist.name) %>%
+                                  dplyr::mutate(gs_description="df.all"),
+                                  readRDS(df.newlist.name) %>%
+                                  dplyr::mutate(gs_description=paste("df",Directionality,sep="."))) %>% 
     dplyr::select(gs_description,ensembl_gene=gene_id)
 
 
 
-## Yifan.genes.df.name <- "../data/drug_resistance_info.mouse.csv"
-## Yifan.genes.df <- read.table(Yifan.genes.df.name,header=TRUE,sep=",") %>%
-##     dplyr::mutate(gs_description=paste("Yifan",Drug,Directionality,sep=".")) %>%
+## df.genes.df.name <- "../data/drug_resistance_info.mouse.csv"
+## df.genes.df <- read.table(df.genes.df.name,header=TRUE,sep=",") %>%
+##     dplyr::mutate(gs_description=paste("df",Drug,Directionality,sep=".")) %>%
 ##     dplyr::select(gs_description,ensembl_gene=gene_id)
 
 gene2msig.prefilt <- msigdbr(species = "Mus musculus", category = "C2") %>%
@@ -143,7 +143,7 @@ gene2msig.prefilt <- msigdbr(species = "Mus musculus", category = "C2") %>%
 
 gene2msig <- gene2msig.prefilt %>% 
     dplyr::select(gs_description, ensembl_gene) %>%
-    rbind.data.frame(Yifan.newlist)
+    rbind.data.frame(df.newlist)
 
 
 
@@ -162,13 +162,13 @@ gsemsig.list.df <- gsemsig.list  %>%  mapply(mutate,.,group=names(.),SIMPLIFY=FA
     lapply(as_tibble) %>% 
     do.call(what=rbind.data.frame,arg=.) %>%
     mutate(group=factor(group,levels=str_sort(group %>% unique, numeric=TRUE))) %>%
-    ## mutate(p.adjust=ifelse(grepl("Yifan",Description),pvalue,p.adjust)) %>%
+    ## mutate(p.adjust=ifelse(grepl("df",Description),pvalue,p.adjust)) %>%
     dplyr::select( pvalue, p.adjust, ID, Description, setSize, NES, enrichmentScore, group) %>%
     mutate(NES=ifelse(abs(NES) > 2, sign(NES) * 2, NES)) %>%
     mutate(pvalue = 10**(floor(abs(log(pvalue,10)) * sign(log(pvalue,10)))))  
-gsemsig.list.df[grepl("Yifan",gsemsig.list.df$Description),]$p.adjust <- p.adjust(gsemsig.list.df[grepl("Yifan",gsemsig.list.df$Description),]$pvalue,method="fdr") 
-gsemsig.list.df <- gsemsig.list.df %>%  mutate( Description = ifelse(Description=="Yifan.Erlotinib.resistance", "Erlotinib resistance",Description)) %>%
-    dplyr::filter(! grepl("Yifan",Description))
+gsemsig.list.df[grepl("df",gsemsig.list.df$Description),]$p.adjust <- p.adjust(gsemsig.list.df[grepl("df",gsemsig.list.df$Description),]$pvalue,method="fdr") 
+gsemsig.list.df <- gsemsig.list.df %>%  mutate( Description = ifelse(Description=="df.Erlotinib.resistance", "Erlotinib resistance",Description)) %>%
+    dplyr::filter(! grepl("df",Description))
 
 
 set.names <- c( "Genes up-regulated in MCF7 cells (breast cancer) at 24 h of",
@@ -212,13 +212,13 @@ for (i in (1:length(set.names)))
     tab.info <- rbind(tab.info, gsemsig.list.df.info %>% dplyr::filter(grepl(set.names[i],Description,fixed=TRUE)) %>%
                       mutate(Description.2=reset.names[i]))
 }
-tab.Yifan <- tab.info %>%
+tab.df <- tab.info %>%
     mutate(Description.2= ifelse( ! grepl("HIF2A",Description),Description.2,"Down-regulated in breast cancer after HIF1A and HIF2A KO"))  %>%
     dplyr::filter(!grepl("6h",Description)) %>%
     dplyr::filter(!grepl("FOXA2 ",Description))   %>%
     distinct(Description,.keep_all=TRUE)  %>%
     dplyr::select( Description, Description.2)
-write.table(tab.Yifan,file.path(out_dir,"cancer_related_terms.tsv"),sep="\t",row.names=FALSE, col.names=FALSE)
+write.table(tab.df,file.path(out_dir,"cancer_related_terms.tsv"),sep="\t",row.names=FALSE, col.names=FALSE)
 #############################################
 
 
@@ -368,91 +368,3 @@ ggsave(g.svg, filename = out_dotplot_small_svg,width = 7, height = 2 +  nrow(gse
 
 saveRDS(g.svg,file=file.path(Robj_dir,"gsea.rdata"))
 
-
-###### big pdf (now outdated)
-str2replace <- "oxidoreductase activity, acting on paired donors, with incorporation or reduction of molecular oxygen, reduced flavin or flavoprotein as one donor, and incorporation of one atom of oxygen"
-str2replace2 <- "G protein-coupled receptor signaling pathway, coupled to cyclic nucleotide second messenger"
-
-gse.list.df.all.preplot <- gse.list.df.all %>%   mutate(pvalue.adj = p.adjust(pvalue, method="BH"))  %>%
-    dplyr::filter(pvalue.adj<0.05) %>% 
-    mutate(pvalue.adj = ifelse(pvalue.adj< 10^-10,10^-10,pvalue.adj))  %>%
-    mutate(pvalue.adj = 10**(floor(abs(log(pvalue.adj,10)) * sign(log(pvalue.adj,10)))))   %>%
-    mutate(Description=str_replace(.$Description,str2replace,"oxidoreductase activity")) %>%
-    mutate(Description=str_replace(.$Description,str2replace2,"G protein-coupled receptor signaling pathway"))
-
-
-order_y <- gse.list.df.all.preplot %>%
-    arrange(pvalue ) %>%
-    dplyr::select(Description) %>%
-    unlist %>%
-    unique %>%
-    rev
-
-
-gse.list.df.all.allplot <-  gse.list.df.all.preplot %>%
-    mutate(Description=factor(Description,levels = order_y)) %>%
-    dplyr::filter(as.numeric(Description) > (max(as.numeric(Description)) - 500))
-    
-
-
-
-
-x_pre.breaks <- gseall.list.df.to_plot$group %>% levels
-x.order  <- x_pre.breaks %>% str_split("\\.",simplify=TRUE) %>% as.data.frame %>%
-    mutate(V2=str_replace(.$V2,"11","9")) %>% 
-    {order(.[,1],.[,2])}
-x_breaks <- x_pre.breaks[x.order]
-
-g <- ggplot(data = gse.list.df.all.allplot, aes(y = Description , x = group, color = NES, size = -log(pvalue.adj,10))) +  
-    geom_point() +
-    scale_color_gradientn(colours=c(scales::muted("blue"),"white" ,"white", scales::muted("red")),values=scales::rescale(c(-2,-0.3,0.3,2)),breaks=c(-2,-0.3,0.3,2),limits=c(-2,2)) +
-    theme_bw() +
-    ylab("") +
-    xlab("") +
-    scale_x_discrete(breaks=x_breaks,limits=x_breaks) +
-    ## scale_size_discrete(breaks=c(0.001, 1e-05, 1e-10),range=c(0.5,5)) +
-    scale_radius(breaks=c(2,4,6,8)) + 
-    ggtitle("GSEA terms of interest") +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1,size=11), axis.text.y = element_text(size=10)) +
-    geom_vline(xintercept=c(4.5,8.5,12.5),linetype="dashed")
-
-out_dotplot_pdf <- file.path(out_dir,"dotplot.pdf")
-ggpubr::ggexport(g, filename = out_dotplot_pdf,width = 15, height = 4 +  nrow(gseall.list.df.to_plot)/2)
-
-
-
-## stemness
-gse.list.df.stemness <- gse.list.df.all %>%
-    dplyr::filter((grepl("(^| )stem",Description,ignore.case=TRUE)))
-
-gse.list.df.stemness.to_plot <-       gse.list.df.stemness %>%
-    mutate(pvalue.adj = p.adjust(pvalue, method="BH"))  %>%
-    dplyr::filter(pvalue.adj<0.05) %>% 
-    mutate(pvalue.adj = ifelse(pvalue.adj< 10^-10,10^-10,pvalue.adj))  %>%
-    mutate(pvalue.adj = 10**(floor(abs(log(pvalue.adj,10)) * sign(log(pvalue.adj,10))))) %>%
-    mutate(time=ifelse(time=="B","BB",time)) %>%
-    mutate(Description=str_to_title(Description))
-
-g.svg.stemness <- ggplot(data = gse.list.df.stemness.to_plot, aes(y = Description , x = time , color = NES, size = -log(pvalue.adj,10))) +  
-    geom_point() +
-    scale_color_gradientn(colours=c(scales::muted("blue"),"white" ,"white", scales::muted("red")),values=scales::rescale(c(-2,-0.3,0.3,2)),breaks=c(-2,-0.3,0.3,2),limits=c(-2,2)) +
-    theme_bw() +
-    ylab("") +
-    xlab("") +
-    scale_x_discrete(breaks=c("5","8","11","BB"),limits=c("5","8","11","BB")) +
-    scale_size_continuous(range=c(0.5,3),breaks= c(2,4,6,8),labels=c("2","4","6","> 8")) + 
-    theme(text = element_text(size=9)) +
-    theme(axis.ticks = element_line(size=0.1),axis.ticks.length = unit(0.04,"cm")) +
-    theme(panel.border = element_blank()) +
-    theme(panel.grid.minor = element_line(size = 0.2), panel.grid.major = element_line(size = 0.2)) +
-    labs(size="-log(q.val)")  + 
-    theme(legend.margin = margin(0,3,0,0),legend.box.margin = margin(0,3,0,0)) +
-    theme( legend.text=element_text(size=8),legend.title=element_text(size=8)) +
-    theme(plot.margin = unit(c(3,0,-2,0), "pt")) +
-    facet_grid(vars(GO_class),vars(geno),scales="free_y",space="free_y",switch="x") +
-    theme(strip.placement="outside") +
-    theme( strip.text.y = element_blank(),strip.background=element_blank()) +
-    theme(legend.key.size = unit(0.35, "cm"), legend.text=element_text(size=7),legend.title=element_text(size=7))
-
-out_dotplot_small_pdf<- file.path(out_dir,"dotplot_stemness.pdf")
-ggpubr::ggexport(g.svg.stemness, filename = out_dotplot_small_pdf,width = 7, height = 2 +  nrow(gseall.list.df.to_plot)*(1/300))

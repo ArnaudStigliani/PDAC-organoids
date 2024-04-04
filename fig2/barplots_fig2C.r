@@ -1,7 +1,7 @@
 
 ## rm(list=ls())
 args = c("5","8","11","B")
-out_dir <- file.path("../../results_2/gene_expression_limma_time_series_BBvsW1/figure2/all_upset_supfig")
+out_dir <- file.path("./resutls/")
 dir.create(out_dir,showWarnings=FALSE,recursive=TRUE)
 
 #### load libraries ##########
@@ -26,7 +26,7 @@ library(ggtext)
 ##########################
 
 
-DEG.tab.name <- "../../results_2/gene_expression_limma_time_series_BBvsW1/deg_table_voomWQW.tsv"
+DEG.tab.name <- "../data/deg_table_voomWQW.tsv"
 
 DEG.tab <-  read.table(DEG.tab.name, header=TRUE,sep="\t")
 
@@ -44,8 +44,7 @@ for(week.args in args)
 ####################
     DEG.tab.dcast <-  DEG.tab.week.args %>%  mutate(logFC = ifelse(adj.P.Val < 0.05,logFC,0)) %>%
         mutate(logFC = ifelse(abs(logFC) > 0.5  ,logFC,0)) %>% 
-        dcast(gene.id ~ geno,value.var="logFC") ## %>%
-        ## dplyr::filter(rowSums(abs(.[,c(2:5)]))!=0)
+        dcast(gene.id ~ geno,value.var="logFC")
 
 ##### making lists
 
@@ -277,6 +276,4 @@ gg.combo <- ggdraw() +
 out_pdf <- file.path(out_dir,"Upset_all.pdf")
 ggpubr::ggexport(gg.combo, filename = out_pdf,height= 5  ,width=10)
 
-## out_svg <- file.path(out_dir,"Upset_all.svg")
-## ggsave( filename = out_svg, gg.combo, height= 8 ,width=16,units="cm")
 
