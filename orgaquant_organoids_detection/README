@@ -1,0 +1,10 @@
+This python script is modified from OrgaQuant https://github.com/TKassis/OrgaQuant . It is used for bright field picture based organoids detection and quantification. 
+
+To set up:
+1. Follow the instruction to install OrgaQuant in a python virtual environment: https://github.com/TKassis/OrgaQuant
+2. Create a directory under the Orgaquant called plugin/ . Move statistics.py and visualization.py into it
+3. Edit the input, output directories and other parameters in orgaquant_run.py
+
+To run the script:
+1. Activate orgaquant virtual environment in terminal
+2. Run python orgaquant_run.py instead of orgaquant.py

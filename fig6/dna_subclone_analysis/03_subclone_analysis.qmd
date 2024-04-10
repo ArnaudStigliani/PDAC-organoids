@@ -1,0 +1,457 @@
+---
+title: "somatic_subclone_callling"
+format: html
+editor: visual
+---
+
+# 0. Import packages
+
+```{r}
+library(maftools)
+library(tidyverse)
+library(VariantAnnotation)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(pheatmap)
+library(rjson)
+library(dndscv)
+library(clusterProfiler)
+txdb = TxDb.Mmusculus.UCSC.mm10.knownGene
+```
+
+```{r}
+my_sci_notation = Vectorize(function(n){
+  if(n < 1000 & n >= 0.001){
+    format(round(n, 3), nsmall = 3)
+  }else if(n==0){
+    "< 2e-16"
+  }else{
+    format(n, digits = 1, scientific = T) %>% 
+      # sub("e", "E", .) %>% 
+      sub("\\+0?", "", .) %>% 
+      sub("-0?", "-", .)
+  }
+})
+```
+
+# 1. Mouse cancer prognosis genes infered from human data
+
+Functions in use
+
+```{r}
+mouse_human_genes = read.csv("http://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt",sep="\t")
+
+convert_mouse_to_human <- function(gene_list){
+  ## modified from https://support.bioconductor.org/p/129636/
+  output = foreach( class_key = (mouse_human_genes$DB.Class.Key %>% unique)) %dopar% {
+    
+      mouse_genes = (mouse_human_genes %>% 
+                       filter(DB.Class.Key == class_key & 
+                                Common.Organism.Name=="mouse, laboratory")) %>% 
+                    transmute(mouse_symbol = Symbol,
+                             mouse_entrez = EntrezGene.ID)
+      tmp_list = list()
+      for(i in unique(mouse_genes$mouse_entrez)){
+        tmp_list[[length(tmp_list)+1]] = (mouse_human_genes %>% 
+                       filter(DB.Class.Key == class_key & 
+                                Common.Organism.Name=="human")) %>% 
+                    transmute(human_symbol = Symbol,
+                             human_entrez = EntrezGene.ID,
+                             mouse_symbol = mouse_genes$mouse_symbol %>% unique(),
+                             mouse_entrez = i)
+        
+      }
+      
+      
+      tmp_list %>% bind_rows()
+  }
+   return (output)
+}
+
+df_mouse_to_human = convert_mouse_to_human(df_mutect$SYMBOL) %>% bind_rows()
+
+```
+
+```{r}
+# downloaded from Human Protein Atlas pathology.tsv.zip
+# https://www.proteinatlas.org/about/download
+tmp_human_prognosis = read_tsv("pathology.tsv") 
+
+tmp_human_prognosis.labled = tmp_human_prognosis %>% 
+  mutate(prognostic = case_when(!is.na(`prognostic - favorable`) ~ "favorable",
+                                !is.na(`prognostic - unfavorable`) ~ "unfavorable",
+                                T ~ "none")) %>% 
+  filter(prognostic != "none") %>%  
+  left_join(df_mouse_to_human, by = c("Gene name" = "human_symbol")) 
+
+tmp_human_prognosis.summary = tmp_human_prognosis.labled %>% 
+  group_by(mouse_symbol, mouse_entrez) %>% 
+  summarise(n_favorable = sum(prognostic == "favorable"),
+            n_unfavorable = sum(prognostic == "unfavorable"),.groups = "drop") %>% 
+  mutate(label = case_when(n_favorable == 0 & n_unfavorable > 0 ~ "unfavorable",
+                           n_favorable > 0 & n_unfavorable == 0 ~ "favorable",
+                           n_favorable > 0 & n_unfavorable > 0 ~ "mixed",
+                           n_favorable == 0 & n_unfavorable == 0 ~ "none",
+                           T ~ "ERROR"))
+
+
+tmp_human_prognosis.pancreatic = tmp_human_prognosis.labled %>% 
+  filter(Cancer == "pancreatic cancer") %>% 
+  group_by(mouse_symbol, mouse_entrez) %>% 
+  summarise(n_favorable = sum(prognostic == "favorable"),
+            n_unfavorable = sum(prognostic == "unfavorable"),.groups = "drop") %>% 
+  transmute(mouse_symbol,mouse_entrez,
+            label_pancreatic_cancer = case_when(n_favorable == 0 & n_unfavorable > 0 ~ "unfavorable",
+                           n_favorable > 0 & n_unfavorable == 0 ~ "favorable",
+                           n_favorable > 0 & n_unfavorable > 0 ~ "mixed",
+                           n_favorable == 0 & n_unfavorable == 0 ~ "none",
+                           T ~ "ERROR"))
+
+```
+
+# 2. Parse input to phylowgs format
+
+### CNV parsed to phylowgs format
+
+reference: https://github.com/morrislab/phylowgs/pull/104/files
+
+```{r}
+parse_cnv_facets_results_for_phylowgs = function(cnv_vcf){
+  
+  sample_name = str_extract(cnv_vcf, "D23011710\\d+vsD23011710\\d+")
+  
+  print(sample_name)
+  
+  tmp_cna <- readVcf(cnv_vcf, "mm10")
+  
+  data.frame(
+    chromosome = seqnames(tmp_cna) %>% as.character %>%  str_remove_all(., pattern="chr"),
+    start = start(tmp_cna),
+    end = tmp_cna@info$END,
+    copy_number = tmp_cna@info$TCN_EM,
+    minor_cn = tmp_cna@info$LCN_EM,
+    cellular_prevalence = tmp_cna@info$CF_EM) %>% 
+  mutate(cellular_prevalence = replace_na(cellular_prevalence, 1),
+         minor_cn = replace_na(minor_cn, 0)) %>% 
+  mutate(major_cn = copy_number - minor_cn) %>% 
+  dplyr::select(c("chromosome",
+    "start","end",	"copy_number",	"minor_cn",	"major_cn",
+    "cellular_prevalence")) %>% 
+  filter(end>start) %>% 
+  write_tsv(paste0("PATH_TO_SOMATIC_VARIANTS_CALLED/", sample_name, ".cnv.txt"))
+}
+```
+
+```{r}
+for(fi in list.files(path = "PATH_TO_SOMATIC_VARIANTS_CALLED/", 
+                     pattern = "vcf.gz$",
+                     full.names = T)){
+  parse_cnv_facets_results_for_phylowgs(fi)
+}
+```
+
+# 3. Parse PhyloWGS results
+
+#### Extract variants assigned in each subclone
+
+```{r}
+
+get_subclonal_allocation_of_variants = function(sample_name, tree_index, tree_dir){
+  tmp_best_tree_mutass = fromJSON(
+    file = paste0(tree_dir, "/results/", 
+    sample_name, "/",
+    sample_name, ".mutass/",
+    tree_index,
+    ".json"
+    ))
+  
+  tmp_map_ssms = read.table(file = 
+          paste0(tree_dir, "/",sample_name,".ssm_data.txt" ),
+          header = T)
+                              
+  
+  out = lapply(FUN = function(x){
+          data.frame(
+            ssms = tmp_best_tree_mutass$mut_assignments[[x]]$ssms,
+            subclone = x,
+            tree_index = tree_index,
+            sample = sample_name
+          )
+        },X = names(tmp_best_tree_mutass$mut_assignments)) %>% 
+        bind_rows() %>% 
+    dplyr::left_join(tmp_map_ssms, by = c("ssms" = "id")) %>% 
+    mutate(chr = str_extract(gene, "(X|Y|M|\\d+)_\\d+", 1) %>% 
+             paste0("chr",.),
+           pos = str_extract(gene, "(X|Y|M|\\d+)_(\\d+)", 2) %>% as.numeric,
+           chr_pos = paste0(chr, ":", pos))
+  out
+}
+  
+
+```
+
+```{r}
+
+parse_phylowgs_results = function(tree_dir){
+  
+    list_phylowgs_best_tree = list()
+    list_phylowgs_best_tree_mutass = list()
+
+    for(i in list.files(path = tree_dir,
+                        pattern = "*.summ.json",
+                        full.names = T,
+                        recursive = T)){
+  
+  sample_name = str_extract(i, "D23011710\\d+vsD23011710\\d+")
+  
+  ## find best tree
+  tmp_trees = parse_phylowgs(json_file=i,return_all = T)
+  tmp_best_tree_i = sapply(1:length(tmp_trees), function(x){tmp_trees[[x]]$llh}) %>% which.max()
+  tmp_best_tree = tmp_trees[tmp_best_tree_i]
+  tmp_best_tree[[1]]$best_tree = tmp_best_tree_i - 1
+  list_phylowgs_best_tree[[sample_name]] = tmp_best_tree
+  
+  ## find the subclonal allocation of variants
+  list_phylowgs_best_tree_mutass[[sample_name]] = 
+    get_subclonal_allocation_of_variants(sample_name, tmp_best_tree_i-1, 
+                                         tree_dir = tree_dir)
+  
+}
+
+    
+df_phylowgs_best_tree = lapply(names(list_phylowgs_best_tree),
+         FUN = function(x){
+             tmp_dat = list_phylowgs_best_tree[[x]][[1]]$evofreq %>%
+                       mutate(sample = x,
+                              tree_id = list_phylowgs_best_tree[[x]][[1]]$best_tree,
+                              cell_proportion = `1`
+                              )
+                                
+            }) %>% 
+            bind_rows() %>% 
+  mutate(condition = case_when(sample == "D2301171050vsD2301171049" ~ "C w11v1 rep1",
+                               sample == "D2301171052vsD2301171051" ~ "C w11v1 rep2",
+                               sample == "D2301171054vsD2301171053" ~ "C w11v1 rep3",
+                               sample == "D2301171055vsD2301171049" ~ "A w11v1 rep1",
+                               sample == "D2301171056vsD2301171051" ~ "A w11v1 rep2",
+                               sample == "D2301171057vsD2301171053" ~ "A w11v1 rep3",
+                               T ~ NA),
+         condition = factor(condition, levels = c("C w11v1 rep1",
+                                                  "C w11v1 rep2",
+                                                  "C w11v1 rep3",
+                                                  "A w11v1 rep1",
+                                                  "A w11v1 rep2",
+                                                  "A w11v1 rep3"))) 
+
+  
+df_phylowgs_best_tree_mutass =
+  list_phylowgs_best_tree_mutass %>% bind_rows() %>% 
+  mutate(condition = case_when(sample == "D2301171050vsD2301171049" ~ "C w11v1 rep1",
+                               sample == "D2301171052vsD2301171051" ~ "C w11v1 rep2",
+                               sample == "D2301171054vsD2301171053" ~ "C w11v1 rep3",
+                               sample == "D2301171055vsD2301171049" ~ "A w11v1 rep1",
+                               sample == "D2301171056vsD2301171051" ~ "A w11v1 rep2",
+                               sample == "D2301171057vsD2301171053" ~ "A w11v1 rep3",
+                               T ~ NA),
+         condition = factor(condition, levels = c("C w11v1 rep1",
+                                                  "C w11v1 rep2",
+                                                  "C w11v1 rep3",
+                                                  "A w11v1 rep1",
+                                                  "A w11v1 rep2",
+                                                  "A w11v1 rep3"))) 
+
+
+  return(list(df_phylowgs_best_tree = df_phylowgs_best_tree,
+         df_phylowgs_best_tree_mutass = df_phylowgs_best_tree_mutass))
+}
+```
+
+### 
+
+#### 
+
+# 4. Stats on somatic mutations
+
+##### 
+
+```{r}
+## annotate dominant and minor subclones
+## make a data.frame with somatic mutation information: loci, VAF, sample, etc.
+df_best_tree_annotated = readRDS("annotated_somatic_variants.rds") %>%
+  mutate(main_subclone = case_when(
+             condition == "C w11v1 rep1" & subclone == "1" |
+             condition == "C w11v1 rep2" & subclone %in% c("1") |
+             condition == "C w11v1 rep3" & subclone %in% c("1") |
+             condition == "A w11v1 rep1" & subclone == "1" |
+             condition == "A w11v1 rep2" & subclone %in% c("1","2") |
+             condition == "A w11v1 rep3" & subclone %in% c("1") ~ "dominant",
+             T ~ "minor")
+           )
+       
+```
+
+## 4.1. Visualize vaf distribution
+
+```{r}
+
+# density plot
+df_best_tree_annotated %>% 
+  mutate(subclone = factor(subclone, 
+                          levels = c("5", "4",
+                                     "3", "2",
+                                     "1"))) %>% 
+  mutate(t_af = t_alt_count / t_depth) %>% 
+  ggplot(aes(x = t_af , color = color_label_subclone))+
+  geom_density(alpha = 0.3)+
+  facet_wrap(~ condition,scales ="free_y")+
+  theme_bw()+
+  scale_color_manual(
+    values = c(
+      "#ff4d6d",
+      "#f08080",
+      "#0a9396",
+      "#005f73",
+      "#001219",
+      "#001219"
+    ),
+    labels =
+      c("Dominant", "Dominant", "Minor1", "Minor2", "Minor3", "Minor4"))+
+  labs(y = "PhyloWGS Subclones",
+       color = "Subclone Classification",
+       x = "Variant Allele Frequency")+
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+```
+
+## 4.2. Number of variants
+
+```{r}
+tmp_toplot = df_best_tree_annotated %>% 
+  group_by(condition, main_subclone) %>% 
+  summarise(n = n(),.groups = "drop") 
+
+tmp_toplot2 = tmp_toplot%>% 
+  pivot_wider(names_from = main_subclone,
+              values_from = n) %>% 
+  mutate(proportion_dominant = dominant / (dominant+ minor),
+         total_num_variants = dominant + minor,
+         proportion_dominant = scales::percent_format()(proportion_dominant)) 
+
+
+tmp_toplot %>% 
+  mutate(condition = factor(condition,
+                            levels = rev(levels(condition)))) %>% 
+  ggplot()+
+    geom_col(aes(x = condition,
+             y = n,
+             fill = main_subclone))+
+    geom_text(aes(x =condition,
+                  y =total_num_variants,
+                  label = proportion_dominant), 
+              nudge_y = 500,
+              data = tmp_toplot2)+
+    scale_fill_manual(values = c("#ff4d6d","#19647e"),
+                      labels = c("Dominant", "Minor"))+
+    labs(y = "Number of Variants",
+         x = "Samples",
+         fill = "Subclone\nClassification")+
+    lims(y = c(0, 5000))+
+    theme_bw()+
+    coord_flip()+
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.position = "top")
+
+
+```
+
+## 4.3 Visualize genes with high VAF nonsynonymous somatic mutations
+
+```{r}
+
+df_best_tree_annotated %>% 
+  filter(
+    condition == "C w11v1 rep1" & subclone == "1" |
+         condition == "C w11v1 rep2" & subclone %in% c("1") |
+         condition == "C w11v1 rep3" & subclone %in% c("1") |
+          condition == "A w11v1 rep1" & subclone == "1" |
+         condition == "A w11v1 rep2" & subclone %in% c("1","2") |
+         condition == "A w11v1 rep3" & subclone %in% c("1"), 
+         Non_Syn == T,
+         BIOTYPE == "protein_coding" 
+        ) %>% 
+ mutate(t_af = t_alt_count / t_depth) %>% 
+  ggplot(aes(x = condition, y = t_af ))+
+  geom_point()+
+  ggrepel::geom_text_repel(aes(label = Hugo_Symbol))+
+  theme_bw()
+
+```
+
+# 5. dNdS analysis
+
+```{r}
+list_dndscv_results = list()
+for(ph_cond in c("A", "C")){
+  for(sub_i in c("main", "minor")){
+    tmp_input = df_best_tree_annotated %>% 
+          mutate(
+            main_subclone = case_when(
+             condition == "C w11v1 rep1" & subclone == "1" |
+             condition == "C w11v1 rep2" & subclone %in% c("1") |
+             condition == "C w11v1 rep3" & subclone %in% c("1") |
+             condition == "A w11v1 rep1" & subclone == "1" |
+             condition == "A w11v1 rep2" & subclone %in% c("1","2") |
+             condition == "A w11v1 rep3" & subclone %in% c("1") ~ "main",
+             T ~ "minor") 
+          ) %>% 
+          filter(str_detect(condition, ph_cond),
+                 main_subclone == sub_i) %>% 
+          transmute(sampleID = Tumor_Sample_Barcode,
+            chr = Chromosome %>% str_extract("(X|Y|M|\\d+)"),
+            pos = vcf_pos,
+            ref = Reference_Allele,
+            mut = Tumor_Seq_Allele2)
+    list_dndscv_results[[paste0(ph_cond,"_",sub_i)]] = 
+      dndscv(tmp_input,refdb = "RefCDS_mouse_GRCm38.p2.rda")
+    
+  }
+}
+
+df_dnds_summary = sapply(list_dndscv_results,
+       function(x){x$globaldnds["wall",]}) %>% 
+  as.data.frame() %>% t() %>% 
+  data.frame() %>% 
+  mutate(name = as.character(name),
+         mle = as.numeric(mle),
+         cilow = as.numeric(cilow),
+         cihigh =as.numeric(cihigh)
+         ) %>% 
+  rownames_to_column("condition") %>% 
+  mutate(acid_condition = str_extract(condition, "A|C"))
+
+df_dnds_summary %>% 
+  mutate(condition = factor(condition,
+                            levels = c("C_main", 
+                                       "C_minor",
+                                       "A_main",
+                                       "A_minor"))) %>% 
+  ggplot(aes(x = condition, y = mle))+
+  geom_hline(yintercept=1, linetype="dashed", color = "red")+
+  geom_col(aes(fill = acid_condition),
+           color = "black",size = 0.6)+
+  geom_text(aes(label = my_sci_notation(mle)),
+            size = 3,
+            nudge_y = 0.05)+
+  
+  theme_bw()+
+  scale_fill_manual(values = c("#FFB700","#8A8F9A"))+
+  labs(y = "dN/dS MLE",
+       fill = "pH adaptation",
+       caption = "The dN/dS is based on dndscv package")+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+```
+
+### 
