@@ -1,13 +1,16 @@
 ### QC/mapping scripts
-*Located in `./mapping`*  
+*Located in `mapping/`*  
 `generate_index.sh` is used to generate the salmon index  
 `run_QC.sh`  runs quality control and trimming programs on the fastq files  
 `map_reads.sh` maps the reads to the mouse transcriptome  
 
 ### Informations
 The necessary data to run the scripts are in the folder `data/`. all the results will be output in the directory `fig*/results`  
-The scripts from the section "QC/mapping scripts" cannot be run without the data available in the SRA accession. Some intermediary files  
-to run the other scripts are therefore provided to the form of expression matrices  
+The scripts from the section "QC/mapping scripts" cannot be run without the data available in the SRA accession. Some intermediary files 
+to run the other scripts are therefore provided to the form of expression matrices.  
+In addition, the scripts needed to determine the organoid surface from the brightfield pictures have been adeed in the folder 
+`orgaquant_organoids_detection/`.  
+
 
 ### gene expression analysis
 `figS2/limmaDEG_figS2C.r` generates the DEG table deg_voomWQW.tsv used by all the `fig2/*` scripts.  
@@ -32,4 +35,6 @@ Also generates `figS2/figS2C`.
 
 `fig3/fig3_boxplots_barplots_figS3C.r` boxplots fig3b, barplots fig3c,d, part of dotplots figS3c,d.  
 
-`fig4/permutation_fig4bc.r` permutation plot fig4 bc
+`fig4/permutation_fig4bc.r` permutation plot fig4 bc  
+
+`fig6/03_subclone_analysis.qmd` contains the code to generate figure 6  
